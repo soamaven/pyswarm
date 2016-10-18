@@ -1,6 +1,6 @@
 from functools import partial
 import numpy as np
-import pynolh
+from pyDOE import lhs
 
 def _obj_wrapper(func, args, kwargs, x):
     return func(x, *args, **kwargs)
@@ -23,7 +23,7 @@ def _roundx(a, binsize):
 def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         swarmsize=100, omega=0.5, phip=0.5, phig=0.5, maxiter=100,
         minstep=1e-8, minfunc=1e-8, debug=False, processes=1,
-        particle_output=False, binsize=None):
+        particle_output=False, binsize=None, latinhyper=False):
     """
     Perform a particle swarm optimization (PSO)
    
@@ -133,7 +133,13 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
     # Initialize the particle swarm ############################################
     S = swarmsize
     D = len(lb)  # the number of dimensions each particle has
-    x = np.random.rand(S, D)  # particle positions
+    if latinhyper:
+        if S < D:
+            print('Minimum swarmsize for LatinHypercube is optimization space dimensions. Using %i particles.' % int(D))
+            S = D
+        x = lhs(D, samples = S, criterion='center')
+    else:
+        x = np.random.rand(S, D)  # particle positions
     v = np.zeros_like(x)  # particle velocities
     p = np.zeros_like(x)  # best particle positions
     fx = np.zeros(S)  # current particle function values
