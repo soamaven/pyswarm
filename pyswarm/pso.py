@@ -1,5 +1,6 @@
 from functools import partial
 import numpy as np
+import pynolh
 
 def _obj_wrapper(func, args, kwargs, x):
     return func(x, *args, **kwargs)
@@ -15,11 +16,14 @@ def _cons_ieqcons_wrapper(ieqcons, args, kwargs, x):
 
 def _cons_f_ieqcons_wrapper(f_ieqcons, args, kwargs, x):
     return np.array(f_ieqcons(x, *args, **kwargs))
+
+def _roundx(a, binsize):
+    return np.around(np.array(a, dtype=float) / binsize) * binsize
     
-def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={}, 
-        swarmsize=100, omega=0.5, phip=0.5, phig=0.5, maxiter=100, 
+def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
+        swarmsize=100, omega=0.5, phip=0.5, phig=0.5, maxiter=100,
         minstep=1e-8, minfunc=1e-8, debug=False, processes=1,
-        particle_output=False):
+        particle_output=False, binsize=None):
     """
     Perform a particle swarm optimization (PSO)
    
@@ -74,6 +78,11 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
     particle_output : boolean
         Whether to include the best per-particle position and the objective
         values at those.
+    binsize : float
+        In order to discritize the solution space, add a binsize size for each dimension
+        that gives an integer number of bins in that solution space. This can be used
+        to search a solution space in a coarse manner by limiting the precision of the
+        particles' positions.
    
     Returns
     =======
@@ -135,6 +144,8 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
     
     # Initialize the particle's position
     x = lb + x*(ub - lb)
+    if binsize:
+        x = _roundx(x, binsize)
 
     # Calculate objective and constraints for each particle
     if processes > 1:
@@ -142,8 +153,8 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         fs = np.array(mp_pool.map(is_feasible, x))
     else:
         for i in range(S):
-            fx[i] = obj(x[i, :])
             fs[i] = is_feasible(x[i, :])
+            fx[i] = obj(x[i, :])
        
     # Store particle's best position (if constraints are satisfied)
     i_update = np.logical_and((fx < fp), fs)
@@ -173,6 +184,8 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         v = omega*v + phip*rp*(p - x) + phig*rg*(g - x)
         # Update the particles' positions
         x = x + v
+        if binsize:
+            x = _roundx(x, binsize)
         # Correct for bound violations
         maskl = x < lb
         masku = x > ub
