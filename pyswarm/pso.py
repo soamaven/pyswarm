@@ -1,25 +1,35 @@
 from functools import partial
 import numpy as np
-from pyDOE import lhs
+import warnings
+try:
+    from pyDOE import lhs
+except ImportError:
+    lhs = None
 
 def _obj_wrapper(func, args, kwargs, x):
     return func(x, *args, **kwargs)
 
+
 def _is_feasible_wrapper(func, x):
-    return np.all(func(x)>=0)
+    return np.all(func(x) >= 0)
+
 
 def _cons_none_wrapper(x):
     return np.array([0])
 
+
 def _cons_ieqcons_wrapper(ieqcons, args, kwargs, x):
     return np.array([y(x, *args, **kwargs) for y in ieqcons])
+
 
 def _cons_f_ieqcons_wrapper(f_ieqcons, args, kwargs, x):
     return np.array(f_ieqcons(x, *args, **kwargs))
 
+
 def _roundx(a, binsize):
     return np.around(np.array(a, dtype=float) / binsize) * binsize
-    
+
+
 def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         swarmsize=100, omega=0.5, phip=0.5, phig=0.5, maxiter=100,
         minstep=1e-8, minfunc=1e-8, debug=False, processes=1,
@@ -83,6 +93,10 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         that gives an integer number of bins in that solution space. This can be used
         to search a solution space in a coarse manner by limiting the precision of the
         particles' positions.
+    latinhyper : bool
+        If True, the particles are positioned with equal spacing along the edges of a
+        square (2D), cube (3D), or hypercube (4+D parameter space). This is helpful for
+        uniform sampling of the space. (default: False)
    
     Returns
     =======
@@ -94,21 +108,21 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         The best known position per particle
     pf: arrray
         The objective values at each position in p
-   
+
     """
-   
-    assert len(lb)==len(ub), 'Lower- and upper-bounds must be the same length'
+
+    assert len(lb) == len(ub), 'Lower- and upper-bounds must be the same length'
     assert hasattr(func, '__call__'), 'Invalid function handle'
     lb = np.array(lb)
     ub = np.array(ub)
-    assert np.all(ub>lb), 'All upper-bound values must be greater than lower-bound values'
-   
+    assert np.all(ub > lb), 'All upper-bound values must be greater than lower-bound values'
+
     vhigh = np.abs(ub - lb)
     vlow = -vhigh
 
     # Initialize objective function
     obj = partial(_obj_wrapper, func, args, kwargs)
-    
+
     # Check for constraint function(s) #########################################
     if f_ieqcons is None:
         if not len(ieqcons):
@@ -129,27 +143,30 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
     if processes > 1:
         import multiprocessing
         mp_pool = multiprocessing.Pool(processes)
-        
+
     # Initialize the particle swarm ############################################
     S = swarmsize
     D = len(lb)  # the number of dimensions each particle has
     if latinhyper:
+        if not lhs:
+            raise ModuleNotFoundError("Please install pyDOE in order to use LatinHypercube spacing.")
         if S < D:
-            print('Minimum swarmsize for LatinHypercube is optimization space dimensions. Using %i particles.' % int(D))
+            warnings.warn('Minimum swarmsize for LatinHypercube is optimization space dimensions.'
+                          ' Using {} particles.'.format(int(D)), RuntimeWarning)
             S = D
-        x = lhs(D, samples = S, criterion='center')
+        x = lhs(D, samples=S, criterion='center')
     else:
         x = np.random.rand(S, D)  # particle positions
     v = np.zeros_like(x)  # particle velocities
     p = np.zeros_like(x)  # best particle positions
     fx = np.zeros(S)  # current particle function values
     fs = np.zeros(S, dtype=bool)  # feasibility of each particle
-    fp = np.ones(S)*np.inf  # best particle function values
+    fp = np.ones(S) * np.inf  # best particle function values
     g = []  # best swarm position
     fg = np.inf  # best swarm position starting value
-    
+
     # Initialize the particle's position
-    x = lb + x*(ub - lb)
+    x = lb + x * (ub - lb)
     if binsize:
         x = _roundx(x, binsize)
 
@@ -161,7 +178,7 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         for i in range(S):
             fs[i] = is_feasible(x[i, :])
             fx[i] = obj(x[i, :])
-       
+
     # Store particle's best position (if constraints are satisfied)
     i_update = np.logical_and((fx < fp), fs)
     p[i_update, :] = x[i_update, :].copy()
@@ -176,10 +193,10 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         # At the start, there may not be any feasible starting point, so just
         # give it a temporary "best" point since it's likely to change
         g = x[0, :].copy()
-       
+
     # Initialize the particle's velocity
-    v = vlow + np.random.rand(S, D)*(vhigh - vlow)
-       
+    v = vlow + np.random.rand(S, D) * (vhigh - vlow)
+
     # Iterate until termination criterion met ##################################
     it = 1
     while it <= maxiter:
@@ -187,7 +204,7 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         rg = np.random.uniform(size=(S, D))
 
         # Update the particles velocities
-        v = omega*v + phip*rp*(p - x) + phig*rg*(g - x)
+        v = omega * v + phip * rp * (p - x) + phig * rg * (g - x)
         # Update the particles' positions
         x = x + v
         if binsize:
@@ -195,7 +212,7 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         # Correct for bound violations
         maskl = x < lb
         masku = x > ub
-        x = x*(~np.logical_or(maskl, masku)) + lb*maskl + ub*masku
+        x = x * (~np.logical_or(maskl, masku)) + lb * maskl + ub * masku
 
         # Update objectives and constraints
         if processes > 1:
@@ -215,22 +232,22 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         i_min = np.argmin(fp)
         if fp[i_min] < fg:
             if debug:
-                print('New best for swarm at iteration {:}: {:} {:}'\
-                    .format(it, p[i_min, :], fp[i_min]))
+                print('New best for swarm at iteration {:}: {:} {:}' \
+                      .format(it, p[i_min, :], fp[i_min]))
 
             p_min = p[i_min, :].copy()
-            stepsize = np.sqrt(np.sum((g - p_min)**2))
+            stepsize = np.sqrt(np.sum((g - p_min) ** 2))
 
             if np.abs(fg - fp[i_min]) <= minfunc:
-                print('Stopping search: Swarm best objective change less than {:}'\
-                    .format(minfunc))
+                print('Stopping search: Swarm best objective change less than {:}' \
+                      .format(minfunc))
                 if particle_output:
                     return p_min, fp[i_min], p, fp
                 else:
                     return p_min, fp[i_min]
             elif stepsize <= minstep:
-                print('Stopping search: Swarm best position change less than {:}'\
-                    .format(minstep))
+                print('Stopping search: Swarm best position change less than {:}' \
+                      .format(minstep))
                 if particle_output:
                     return p_min, fp[i_min], p, fp
                 else:
@@ -244,7 +261,7 @@ def pso(func, lb, ub, ieqcons=[], f_ieqcons=None, args=(), kwargs={},
         it += 1
 
     print('Stopping search: maximum iterations reached --> {:}'.format(maxiter))
-    
+
     if not is_feasible(g):
         print("However, the optimization couldn't find a feasible design. Sorry")
     if particle_output:
