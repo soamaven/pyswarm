@@ -16,7 +16,7 @@ setup(
     license='BSD License',
     long_description=read('README.rst'),
     packages=['pyswarm'],
-    install_requires=['numpy'],
+    install_requires=['numpy','pyDOE'],
     keywords=[
         'PSO',
         'particle swarm optimization',
